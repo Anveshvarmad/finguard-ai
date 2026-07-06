@@ -27,6 +27,19 @@ def list_alerts(
     return query.order_by(RiskAlert.created_at.desc()).limit(limit).all()
 
 
+@router.get("/recent/feed", response_model=list[AlertResponse])
+def get_recent_alert_feed(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(RiskAlert)
+        .order_by(RiskAlert.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 @router.get("/{alert_id}", response_model=AlertResponse)
 def get_alert(alert_id: str, db: Session = Depends(get_db)):
     alert = db.query(RiskAlert).filter(RiskAlert.alert_id == alert_id).first()

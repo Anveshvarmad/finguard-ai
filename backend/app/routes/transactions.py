@@ -133,6 +133,19 @@ def list_transactions(
     return query.order_by(Transaction.timestamp.desc()).limit(limit).all()
 
 
+@router.get("/recent/feed", response_model=list[TransactionResponse])
+def get_recent_transaction_feed(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Transaction)
+        .order_by(Transaction.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 def get_transaction(transaction_id: str, db: Session = Depends(get_db)):
     transaction = (
