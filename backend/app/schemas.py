@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VendorCreate(BaseModel):
@@ -42,7 +42,7 @@ class TransactionCreate(BaseModel):
     approval_status: str = "Approved"
     risk_score: int = 0
     risk_level: str = "Low"
-    risk_flags: list[str] = []
+    risk_flags: list[str] = Field(default_factory=list)
     review_status: str = "Not Reviewed"
     timestamp: datetime | None = None
 
@@ -102,6 +102,15 @@ class RiskRuleResponse(BaseModel):
     score_weight: int
     enabled: str
     created_at: datetime
+
+
+class RiskEvaluationResponse(BaseModel):
+    risk_score: int
+    risk_level: str
+    risk_flags: list[str]
+    triggered_rules: list[str]
+    alert_reason: str
+    evidence_fields: dict[str, Any]
 
 
 class DashboardSummary(BaseModel):

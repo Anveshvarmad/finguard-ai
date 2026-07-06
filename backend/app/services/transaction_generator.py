@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import RiskAlert, Transaction, Vendor
+from app.services.risk_engine import RiskScoringEngine
 
 
 VENDOR_TEMPLATES = [
@@ -101,6 +102,9 @@ SIMULATION_PATTERNS = [
 
 
 class TransactionGenerator:
+    def __init__(self):
+        self.risk_engine = RiskScoringEngine()
+
     def generate_transaction(self, db: Session) -> Transaction:
         pattern = random.choices(
             SIMULATION_PATTERNS,
@@ -112,7 +116,12 @@ class TransactionGenerator:
         vendor = self._get_or_create_vendor(db, vendor_template)
 
         payload = self._build_payload(pattern, vendor)
-        risk_score, risk_level, risk_flags = self._score_payload(payload, vendor, pattern)
+
+        risk_result = self.risk_engine.evaluate(
+            db=db,
+            payload=payload,
+            vendor=vendor,
+        )
 
         transaction = Transaction(
             transaction_id=f"TXN-{uuid4().hex[:10].upper()}",
@@ -128,9 +137,9 @@ class TransactionGenerator:
             invoice_id=payload["invoice_id"],
             approved_by=payload["approved_by"],
             approval_status=payload["approval_status"],
-            risk_score=risk_score,
-            risk_level=risk_level,
-            risk_flags=risk_flags,
+            risk_score=risk_result["risk_score"],
+            risk_level=risk_result["risk_level"],
+            risk_flags=risk_result["risk_flags"],
             review_status="Not Reviewed",
             timestamp=payload["timestamp"],
         )
@@ -138,7 +147,12 @@ class TransactionGenerator:
         db.add(transaction)
         db.flush()
 
-        self._create_alert_if_needed(db, transaction)
+        self._create_alert_if_needed(
+            db=db,
+            transaction=transaction,
+            alert_reason=risk_result["alert_reason"],
+        )
+
         self._update_vendor_metrics(db, vendor, transaction)
 
         db.commit()
@@ -283,7 +297,8 @@ class TransactionGenerator:
             description = f"Standard payment to {vendor.name}."
 
         return {
-            "pattern": pattern,
+            "simulation_pattern": pattern,
+            "vendor_name": vendor.name,
             "department": department,
             "amount": amount,
             "payment_method": payment_method,
@@ -296,74 +311,11 @@ class TransactionGenerator:
             "timestamp": timestamp,
         }
 
-    def _score_payload(
-        self,
-        payload: dict,
-        vendor: Vendor,
-        pattern: str,
-    ) -> tuple[int, str, list[str]]:
-        score = 0
-        flags = []
-
-        amount = payload["amount"]
-
-        if amount >= 10000:
-            score += 20
-            flags.append("Large transaction amount")
-
-        if amount >= 50000:
-            score += 20
-            flags.append("Amount exceeds enhanced review threshold")
-
-        if payload["payment_method"] == "Wire":
-            score += 10
-            flags.append("Wire transfer")
-
-        if vendor.risk_rating in ["High", "Critical"]:
-            score += 20
-            flags.append("High-risk vendor profile")
-
-        if payload["approval_status"] == "Missing Approval":
-            score += 30
-            flags.append("Missing approval metadata")
-
-        if pattern == "weekend_approval":
-            score += 15
-            flags.append("Weekend or after-hours approval")
-
-        if pattern == "duplicate_invoice":
-            score += 35
-            flags.append("Potential duplicate invoice pattern")
-
-        if pattern == "round_number_transfer":
-            score += 15
-            flags.append("Round-number transfer amount")
-
-        if pattern == "critical_wire_transfer":
-            score += 20
-            flags.append("Critical wire transfer pattern")
-
-        if pattern == "high_risk_country_payment":
-            score += 20
-            flags.append("International high-risk payment pattern")
-
-        score = min(score, 100)
-
-        if score >= 81:
-            level = "Critical"
-        elif score >= 61:
-            level = "High"
-        elif score >= 31:
-            level = "Medium"
-        else:
-            level = "Low"
-
-        return score, level, flags
-
     def _create_alert_if_needed(
         self,
         db: Session,
         transaction: Transaction,
+        alert_reason: str,
     ) -> RiskAlert | None:
         if transaction.risk_score < 61:
             return None
@@ -375,9 +327,7 @@ class TransactionGenerator:
             risk_level=transaction.risk_level,
             risk_score=transaction.risk_score,
             risk_flags=transaction.risk_flags,
-            alert_reason=", ".join(transaction.risk_flags)
-            if transaction.risk_flags
-            else "Transaction exceeded risk threshold",
+            alert_reason=alert_reason,
             status="Open",
         )
 

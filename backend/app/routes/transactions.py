@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import RiskAlert, Transaction, Vendor
 from app.schemas import TransactionCreate, TransactionResponse
+from app.services.risk_engine import RiskScoringEngine
 
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
@@ -31,7 +33,11 @@ def get_or_create_vendor(db: Session, vendor_name: str, country: str) -> Vendor:
     return vendor
 
 
-def create_alert_for_transaction(db: Session, transaction: Transaction) -> RiskAlert | None:
+def create_alert_for_transaction(
+    db: Session,
+    transaction: Transaction,
+    alert_reason: str,
+) -> RiskAlert | None:
     if transaction.risk_score < 61:
         return None
 
@@ -42,15 +48,46 @@ def create_alert_for_transaction(db: Session, transaction: Transaction) -> RiskA
         risk_level=transaction.risk_level,
         risk_score=transaction.risk_score,
         risk_flags=transaction.risk_flags,
-        alert_reason=", ".join(transaction.risk_flags)
-        if transaction.risk_flags
-        else "Transaction exceeded risk threshold",
+        alert_reason=alert_reason,
         status="Open",
     )
 
     db.add(alert)
 
     return alert
+
+
+def update_vendor_metrics(
+    db: Session,
+    vendor: Vendor,
+    transaction: Transaction,
+) -> None:
+    vendor.total_payment_volume += transaction.amount
+
+    transaction_count = (
+        db.query(Transaction)
+        .filter(Transaction.vendor_id == vendor.id)
+        .count()
+    )
+
+    existing_average = vendor.average_risk_score or 0
+
+    if transaction_count <= 1:
+        vendor.average_risk_score = transaction.risk_score
+    else:
+        previous_count = transaction_count - 1
+        vendor.average_risk_score = round(
+            ((existing_average * previous_count) + transaction.risk_score)
+            / transaction_count,
+            2,
+        )
+
+    if transaction.risk_score >= 81:
+        vendor.risk_rating = "Critical"
+    elif transaction.risk_score >= 61 and vendor.risk_rating != "Critical":
+        vendor.risk_rating = "High"
+    elif transaction.risk_score >= 31 and vendor.risk_rating not in ["High", "Critical"]:
+        vendor.risk_rating = "Medium"
 
 
 @router.post("", response_model=TransactionResponse)
@@ -67,27 +104,32 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     data = payload.model_dump(exclude_none=True)
     data["transaction_id"] = external_id
     data["vendor_id"] = vendor.id
+    data["timestamp"] = data.get("timestamp") or datetime.now(timezone.utc)
+
+    risk_engine = RiskScoringEngine()
+    risk_result = risk_engine.evaluate(
+        db=db,
+        payload=data,
+        vendor=vendor,
+        exclude_transaction_id=external_id,
+    )
+
+    data["risk_score"] = risk_result["risk_score"]
+    data["risk_level"] = risk_result["risk_level"]
+    data["risk_flags"] = risk_result["risk_flags"]
 
     transaction = Transaction(**data)
 
     db.add(transaction)
     db.flush()
 
-    create_alert_for_transaction(db, transaction)
+    create_alert_for_transaction(
+        db=db,
+        transaction=transaction,
+        alert_reason=risk_result["alert_reason"],
+    )
 
-    vendor.total_payment_volume += transaction.amount
-
-    vendor_transactions = db.query(Transaction).filter(Transaction.vendor_id == vendor.id).all()
-    if vendor_transactions:
-        total_risk = sum(item.risk_score for item in vendor_transactions) + transaction.risk_score
-        vendor.average_risk_score = round(total_risk / (len(vendor_transactions) + 1), 2)
-
-    if transaction.risk_score >= 81:
-        vendor.risk_rating = "Critical"
-    elif transaction.risk_score >= 61 and vendor.risk_rating not in ["Critical"]:
-        vendor.risk_rating = "High"
-    elif transaction.risk_score >= 31 and vendor.risk_rating not in ["High", "Critical"]:
-        vendor.risk_rating = "Medium"
+    update_vendor_metrics(db, vendor, transaction)
 
     db.commit()
     db.refresh(transaction)
