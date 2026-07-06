@@ -33,6 +33,7 @@ services:
       - ./backend/.env
     volumes:
       - ./backend:/app
+      - chroma-data:/app/chroma_data
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,3 +54,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  chroma-data:

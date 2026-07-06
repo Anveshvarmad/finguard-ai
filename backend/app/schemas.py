@@ -155,6 +155,47 @@ class RiskEvaluationResponse(BaseModel):
     evidence_fields: dict[str, Any]
 
 
+class SearchRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=10, ge=1, le=50)
+    risk_level: str | None = None
+    department: str | None = None
+    vendor: str | None = None
+    payment_method: str | None = None
+    category: str | None = None
+    country: str | None = None
+    min_amount: float | None = None
+    max_amount: float | None = None
+
+
+class SemanticSearchResult(BaseModel):
+    transaction: TransactionResponse
+    similarity_score: float
+    distance: float
+    evidence_text: str
+    metadata: dict[str, Any]
+    matched_reason: str
+
+
+class SemanticSearchResponse(BaseModel):
+    query: str
+    top_k: int
+    result_count: int
+    results: list[SemanticSearchResult]
+
+
+class IndexTransactionsResponse(BaseModel):
+    status: str
+    indexed_count: int
+    indexed_ids: list[str]
+
+
+class VectorStatsResponse(BaseModel):
+    collection_name: str
+    persist_path: str
+    vector_count: int
+
+
 class DashboardSummary(BaseModel):
     total_transactions: int
     total_vendors: int

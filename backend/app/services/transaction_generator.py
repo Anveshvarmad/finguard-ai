@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import RiskAlert, Transaction, Vendor
 from app.services.risk_engine import RiskScoringEngine
+from app.services.vector_store import VectorStoreService
 
 
 VENDOR_TEMPLATES = [
@@ -157,6 +158,11 @@ class TransactionGenerator:
 
         db.commit()
         db.refresh(transaction)
+
+        try:
+            VectorStoreService().index_transaction(transaction)
+        except Exception:
+            pass
 
         return transaction
 

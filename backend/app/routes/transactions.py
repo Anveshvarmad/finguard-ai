@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import RiskAlert, Transaction, Vendor
 from app.schemas import TransactionCreate, TransactionResponse
 from app.services.risk_engine import RiskScoringEngine
+from app.services.vector_store import VectorStoreService
 
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
@@ -133,6 +134,11 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
 
     db.commit()
     db.refresh(transaction)
+
+    try:
+        VectorStoreService().index_transaction(transaction)
+    except Exception:
+        pass
 
     return transaction
 

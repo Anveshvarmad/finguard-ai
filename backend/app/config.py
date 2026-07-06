@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
 
     chroma_collection_name: str = "finguard_transactions"
+    chroma_persist_path: str = "./chroma_data"
 
     class Config:
         env_file = ".env"
