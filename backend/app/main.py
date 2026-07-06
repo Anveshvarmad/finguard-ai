@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import health, ai
+from app.database import Base, engine
+from app import models
+from app.routes import ai, alerts, health, seed, transactions, vendors
 
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="FinGuard AI",
@@ -23,6 +27,10 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(ai.router)
+app.include_router(vendors.router)
+app.include_router(transactions.router)
+app.include_router(alerts.router)
+app.include_router(seed.router)
 
 
 @app.get("/")
