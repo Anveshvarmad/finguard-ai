@@ -92,6 +92,48 @@ class AlertStatusUpdate(BaseModel):
     assigned_to: str | None = None
 
 
+class InvestigationNoteCreate(BaseModel):
+    author: str = "Compliance Analyst"
+    note: str
+
+
+class InvestigationNoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    alert_id: str
+    transaction_id: str
+    author: str
+    note: str
+    created_at: datetime
+
+
+class InvestigationTimelineItem(BaseModel):
+    type: str
+    timestamp: datetime
+    title: str
+    description: str
+
+
+class AlertInvestigationResponse(BaseModel):
+    alert: AlertResponse
+    transaction: TransactionResponse
+    notes: list[InvestigationNoteResponse]
+    timeline: list[InvestigationTimelineItem]
+    related_transactions: list[TransactionResponse]
+    ai_mode: str
+    ai_explanation: str
+    evidence: str
+
+
+class AlertExplanationResponse(BaseModel):
+    alert_id: str
+    transaction_id: str
+    mode: str
+    explanation: str
+    evidence: str
+
+
 class RiskRuleResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

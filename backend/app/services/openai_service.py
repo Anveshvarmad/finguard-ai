@@ -31,3 +31,33 @@ Evidence:
         )
 
         return response.output_text
+
+    def generate_alert_investigation_explanation(self, evidence: str) -> str:
+        response = self.client.responses.create(
+            model=settings.openai_chat_model,
+            input=f"""
+You are an internal compliance investigation assistant.
+
+Your task:
+Explain why this alert deserves review using only the evidence provided.
+Do not invent facts.
+Do not mention missing information unless it appears in the evidence.
+Write in a clear analyst-style tone.
+
+Return exactly these sections:
+
+Risk Summary:
+One short paragraph explaining the alert.
+
+Key Evidence:
+- 3 to 5 bullet points grounded in the evidence.
+
+Recommended Next Steps:
+- 2 to 4 practical investigation steps.
+
+Evidence:
+{evidence}
+"""
+        )
+
+        return response.output_text
