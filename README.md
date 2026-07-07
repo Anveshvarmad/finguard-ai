@@ -3,7 +3,11 @@
 FinGuard AI is a full-stack AI-powered compliance monitoring platform that simulates financial transactions, scores transaction risk, creates alerts, supports investigation workflows, and enables semantic search across compliance evidence using OpenAI embeddings and ChromaDB.
 
 The project is designed like an internal compliance operations tool for finance, fraud review, audit, and risk teams.
+## Demo
 
+Live demo: https://finguard-ai-kappa.vercel.app
+
+FinGuard AI is deployed as a full-stack demo showcasing real-time compliance monitoring, AI-powered semantic search, and alert investigation workflows.
 ---
 
 ## Features
