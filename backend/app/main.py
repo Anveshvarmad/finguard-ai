@@ -13,6 +13,7 @@ from app.routes import (
     search,
     seed,
     simulate,
+    system,
     transactions,
     vendors,
     websocket_feed,
@@ -50,6 +51,7 @@ app.include_router(indexing.router)
 app.include_router(search.router)
 app.include_router(analytics.router)
 app.include_router(websocket_feed.router)
+app.include_router(system.router)
 
 
 @app.get("/")
@@ -57,4 +59,5 @@ def root():
     return {
         "message": "FinGuard AI backend is running",
         "docs": "/docs",
+        "system_status": "/system/status",
     }
