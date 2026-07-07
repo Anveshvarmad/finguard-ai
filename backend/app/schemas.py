@@ -203,7 +203,42 @@ class DashboardSummary(BaseModel):
     open_alerts: int
     critical_alerts: int
     high_risk_transactions: int
+    total_payment_volume: float
+    average_transaction_amount: float
     average_risk_score: float
+
+
+class AnalyticsBucket(BaseModel):
+    name: str
+    count: int
+    average_risk_score: float | None = None
+    total_amount: float | None = None
+
+
+class TrendPoint(BaseModel):
+    date: str
+    count: int
+    total_amount: float | None = None
+    average_risk_score: float | None = None
+
+
+class TopVendorRisk(BaseModel):
+    vendor_name: str
+    transaction_count: int
+    alert_count: int
+    total_amount: float
+    average_risk_score: float
+    max_risk_score: int
+
+
+class DashboardOverview(BaseModel):
+    summary: DashboardSummary
+    risk_by_department: list[AnalyticsBucket]
+    alert_severity_distribution: list[AnalyticsBucket]
+    alert_status_distribution: list[AnalyticsBucket]
+    top_risky_vendors: list[TopVendorRisk]
+    recent_transactions: list[TransactionResponse]
+    recent_alerts: list[AlertResponse]
 
 
 class SeedResponse(BaseModel):

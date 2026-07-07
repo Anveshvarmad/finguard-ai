@@ -3,7 +3,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 from app import models
-from app.routes import ai, alerts, health, indexing, risk, search, seed, simulate, transactions, vendors
+from app.routes import (
+    ai,
+    alerts,
+    analytics,
+    health,
+    indexing,
+    risk,
+    search,
+    seed,
+    simulate,
+    transactions,
+    vendors,
+)
 
 
 Base.metadata.create_all(bind=engine)
@@ -35,6 +47,7 @@ app.include_router(simulate.router)
 app.include_router(risk.router)
 app.include_router(indexing.router)
 app.include_router(search.router)
+app.include_router(analytics.router)
 
 
 @app.get("/")
