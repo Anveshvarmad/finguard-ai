@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -16,6 +16,9 @@ import {
   Siren,
   Sparkles,
   WalletCards,
+  Wifi,
+  WifiOff,
+  X,
 } from "lucide-react";
 import {
   Area,
@@ -32,7 +35,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { get, patch, post } from "./lib/api";
+import { get, patch, post, WS_URL } from "./lib/api";
 import type {
   Alert,
   AlertInvestigation,
@@ -238,28 +241,93 @@ function LiveMonitor() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [busy, setBusy] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [lastEventAt, setLastEventAt] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const latestTransactionId = useRef<string | null>(null);
 
   async function load() {
     const [tx, al] = await Promise.all([
       get<Transaction[]>("/transactions/recent/feed?limit=20"),
       get<Alert[]>("/alerts/recent/feed?limit=10"),
     ]);
+
     setTransactions(tx);
     setAlerts(al);
   }
 
   useEffect(() => {
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | undefined;
+    let manuallyClosed = false;
+
+    function connect() {
+      socket = new WebSocket(`${WS_URL}/ws/live-feed`);
+
+      socket.onopen = () => {
+        setConnected(true);
+      };
+
+      socket.onclose = () => {
+        setConnected(false);
+
+        if (!manuallyClosed) {
+          reconnectTimer = window.setTimeout(connect, 3000);
+        }
+      };
+
+      socket.onerror = () => {
+        setConnected(false);
+      };
+
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        const nextTransactions = payload.transactions || [];
+        const nextAlerts = payload.alerts || [];
+
+        setTransactions(nextTransactions);
+        setAlerts(nextAlerts);
+        setLastEventAt(payload.timestamp || new Date().toISOString());
+
+        const newest = nextTransactions[0];
+
+        if (newest && latestTransactionId.current && newest.transaction_id !== latestTransactionId.current) {
+          setToast(`New ${newest.risk_level} transaction detected: ${newest.transaction_id}`);
+          window.setTimeout(() => setToast(null), 3500);
+        }
+
+        if (newest) {
+          latestTransactionId.current = newest.transaction_id;
+        }
+      };
+    }
+
+    connect();
     load();
-    const timer = window.setInterval(load, 5000);
-    return () => window.clearInterval(timer);
+
+    return () => {
+      manuallyClosed = true;
+
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+
+      if (socket) {
+        socket.close();
+      }
+    };
   }, []);
 
   async function seedData() {
     setBusy(true);
+
     try {
       await post("/seed/sample-data?force=true");
       await post("/index/transactions?limit=500");
       await load();
+      setToast("Sample data reset and indexed successfully.");
+      window.setTimeout(() => setToast(null), 3000);
     } finally {
       setBusy(false);
     }
@@ -267,9 +335,12 @@ function LiveMonitor() {
 
   async function simulateBatch() {
     setBusy(true);
+
     try {
       await post("/simulate/batch?count=15");
       await load();
+      setToast("Generated 15 simulated compliance events.");
+      window.setTimeout(() => setToast(null), 3000);
     } finally {
       setBusy(false);
     }
@@ -277,9 +348,12 @@ function LiveMonitor() {
 
   async function startLive() {
     setBusy(true);
+
     try {
       await post("/simulate/live?count=40&delay_seconds=1");
       window.setTimeout(load, 1500);
+      setToast("Live simulation started. New events will appear automatically.");
+      window.setTimeout(() => setToast(null), 3500);
     } finally {
       setBusy(false);
     }
@@ -287,6 +361,22 @@ function LiveMonitor() {
 
   return (
     <div className="page-grid">
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
+      <section className="monitor-status-card">
+        <div>
+          <p className="eyebrow small">Streaming Status</p>
+          <h2>Real-Time Compliance Event Feed</h2>
+          <span>
+            {lastEventAt
+              ? `Last update: ${formatDate(lastEventAt)}`
+              : "Waiting for first event update..."}
+          </span>
+        </div>
+
+        <ConnectionBadge connected={connected} />
+      </section>
+
       <section className="action-row">
         <button className="primary-btn" onClick={seedData} disabled={busy}>
           <Database size={18} />
@@ -310,9 +400,13 @@ function LiveMonitor() {
         <Panel title="Live Transaction Feed" icon={<Activity />}>
           <div className="live-feed">
             {transactions.map((tx) => (
-              <div key={tx.transaction_id} className="feed-card">
+              <button
+                key={tx.transaction_id}
+                className="feed-card clickable-feed-card"
+                onClick={() => setSelectedTransaction(tx)}
+              >
                 <div className="feed-main">
-                  <div className="feed-pulse" />
+                  <div className={`feed-pulse ${tx.risk_level.toLowerCase()}`} />
                   <div>
                     <div className="feed-title">{tx.transaction_id}</div>
                     <div className="feed-subtitle">
@@ -324,7 +418,7 @@ function LiveMonitor() {
                   <div className="amount">{formatCurrency(tx.amount)}</div>
                   <RiskBadge level={tx.risk_level} score={tx.risk_score} />
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </Panel>
@@ -333,6 +427,13 @@ function LiveMonitor() {
           <AlertList alerts={alerts} />
         </Panel>
       </section>
+
+      {selectedTransaction && (
+        <TransactionDrawer
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+        />
+      )}
     </div>
   );
 }
@@ -743,6 +844,101 @@ function AnalyticsPage() {
     </div>
   );
 }
+
+function ConnectionBadge({ connected }: { connected: boolean }) {
+  return (
+    <div className={`connection-badge ${connected ? "connected" : "disconnected"}`}>
+      {connected ? <Wifi size={18} /> : <WifiOff size={18} />}
+      <span>{connected ? "WebSocket Connected" : "Reconnecting..."}</span>
+    </div>
+  );
+}
+
+function Toast({
+  message,
+  onClose,
+}: {
+  message: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="toast">
+      <div>
+        <strong>Live Update</strong>
+        <p>{message}</p>
+      </div>
+      <button onClick={onClose}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
+function TransactionDrawer({
+  transaction,
+  onClose,
+}: {
+  transaction: Transaction;
+  onClose: () => void;
+}) {
+  return (
+    <div className="drawer-backdrop" onClick={onClose}>
+      <aside className="transaction-drawer" onClick={(event) => event.stopPropagation()}>
+        <div className="drawer-header">
+          <div>
+            <p className="eyebrow small">Transaction Detail</p>
+            <h2>{transaction.transaction_id}</h2>
+            <span>{transaction.vendor_name}</span>
+          </div>
+
+          <button className="icon-btn" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="drawer-risk">
+          <RiskBadge level={transaction.risk_level} score={transaction.risk_score} />
+          <span>{transaction.review_status}</span>
+        </div>
+
+        <div className="detail-grid drawer-grid">
+          <Info label="Amount" value={formatCurrency(transaction.amount)} />
+          <Info label="Department" value={transaction.department} />
+          <Info label="Payment Method" value={transaction.payment_method} />
+          <Info label="Country" value={transaction.country} />
+          <Info label="Category" value={transaction.category} />
+          <Info label="Invoice ID" value={transaction.invoice_id || "N/A"} />
+          <Info label="Approved By" value={transaction.approved_by || "Missing"} />
+          <Info label="Approval Status" value={transaction.approval_status} />
+        </div>
+
+        <div className="drawer-section">
+          <h3>Description</h3>
+          <p>{transaction.description}</p>
+        </div>
+
+        <div className="drawer-section">
+          <h3>Risk Flags</h3>
+          {transaction.risk_flags.length === 0 ? (
+            <p>No major risk flags detected.</p>
+          ) : (
+            <div className="flag-list">
+              {transaction.risk_flags.map((flag) => (
+                <span key={flag}>{flag}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="drawer-section">
+          <h3>Timestamp</h3>
+          <p>{formatDate(transaction.timestamp)}</p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 
 function MetricCard({
   label,
