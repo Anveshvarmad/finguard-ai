@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     chroma_collection_name: str = "finguard_transactions"
     chroma_persist_path: str = "./chroma_data"
 
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+
     class Config:
         env_file = ".env"
 
